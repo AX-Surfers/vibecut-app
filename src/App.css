@@ -93,10 +93,8 @@
 }
 
 .app-panel--scenes {
-  width: 300px;
-  flex-shrink: 0;
-  background: var(--bg);
-  border-right: 1px solid var(--line);
+  flex: 1;
+  background: var(--cream);
   display: flex;
   flex-direction: column;
   overflow: hidden;

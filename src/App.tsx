@@ -1,25 +1,16 @@
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import { VideoPreview } from "./components/VideoPreview";
 import { ExportPanel } from "./components/ExportPanel";
-import { SceneSubtitleEditor } from "./components/SceneSubtitleEditor";
-import { SceneTokenRail } from "./components/SceneTokenRail";
 import { SceneList } from "./components/SceneList";
 import { useTranscriptStore } from "./state/transcriptStore";
 import { useProjectStore } from "./state/projectStore";
 import { useProjectAutosave } from "./hooks/useProjectAutosave";
 import { useVideoPipeline } from "./hooks/useVideoPipeline";
-import { useVideoStore } from "./state/videoStore";
-import { formatTimestamp } from "./lib/timeFormat";
 import "./App.css";
 
 export default function App() {
   const { scenes, sourceFile, videoFile } = useTranscriptStore();
-  const selectedSceneId = useTranscriptStore((s) => s.selectedSceneId);
-  const setSelectedSceneId = useTranscriptStore((s) => s.setSelectedSceneId);
-  const setSubtitleOverride = useTranscriptStore((s) => s.setSubtitleOverride);
-  const mergeWithPrevious = useTranscriptStore((s) => s.mergeWithPrevious);
   const { isDirty } = useProjectStore();
-  const seekTo = useVideoStore((s) => s.seekTo);
   const [dropWarningWordIds, setDropWarningWordIds] = useState<Set<string>>(new Set());
   const [suggestedWordIds, setSuggestedWordIds] = useState<Set<string>>(new Set());
   const [suggestedSceneIds, setSuggestedSceneIds] = useState<Set<string>>(new Set());
@@ -33,26 +24,6 @@ export default function App() {
   } = useVideoPipeline();
 
   useProjectAutosave();
-
-  const selectedScene = useMemo(
-    () => scenes.find((s) => s.id === selectedSceneId) ?? null,
-    [scenes, selectedSceneId]
-  );
-
-  const selectedSceneIndex = useMemo(
-    () => scenes.findIndex((s) => s.id === selectedSceneId),
-    [scenes, selectedSceneId]
-  );
-
-  const previousSceneId = selectedSceneIndex > 0 ? scenes[selectedSceneIndex - 1]?.id : undefined;
-
-  const handleCommitSubtitle = (sceneId: string, text: string) => {
-    setSubtitleOverride(sceneId, text);
-  };
-
-  const handleMergeWithPrevious = (sceneId: string, _previousSceneId: string) => {
-    mergeWithPrevious(sceneId);
-  };
 
   return (
     <div className="app">
@@ -93,60 +64,11 @@ export default function App() {
         </div>
 
         <div className="app-panel app-panel--scenes">
-          <div className="scenes-header">
-            <span className="scenes-header__title">
-              씬 목록{suggestedSceneIds.size > 0 ? ` (${suggestedSceneIds.size})` : ""}
-            </span>
-          </div>
           <SceneList
             dropWarningWordIds={dropWarningWordIds}
             suggestedWordIds={suggestedWordIds}
             suggestedSceneIds={suggestedSceneIds}
           />
-        </div>
-
-        <div className="app-panel app-panel--workspace">
-          <div className="workspace-header">
-            <span className="workspace-header__title">
-              {selectedScene
-                ? `씬 ${selectedSceneIndex + 1} · ${formatTimestamp(selectedScene.start, selectedScene.end - selectedScene.start)}`
-                : "자막 편집"}
-            </span>
-          </div>
-
-          <div className="workspace-subtitle">
-            {selectedScene ? (
-              <>
-                <SceneTokenRail
-                  words={selectedScene.words}
-                  isSelected={true}
-                  dropWarningWordIds={dropWarningWordIds}
-                  suggestedWordIds={suggestedWordIds}
-                  onSelect={() => {}}
-                  onToggleWord={(wordId, start) => {
-                    if (seekTo) seekTo(start);
-                    useTranscriptStore.getState().toggleWord(wordId);
-                  }}
-                  onSplitWord={(wordId) => {
-                    useTranscriptStore.getState().splitScene(selectedScene.id, wordId);
-                  }}
-                />
-                <SceneSubtitleEditor
-                  scene={selectedScene}
-                  previousSceneId={previousSceneId}
-                  onSelect={() => {}}
-                  onSelectScene={setSelectedSceneId}
-                  onCommitSubtitle={handleCommitSubtitle}
-                  onMergeWithPrevious={handleMergeWithPrevious}
-                />
-              </>
-            ) : (
-              <div className="workspace-subtitle--empty">
-                <p>영상을 열어 시작하세요</p>
-              </div>
-            )}
-          </div>
-
           <ExportPanel
             onDropWarnings={setDropWarningWordIds}
             onSuggestionPreview={(sceneIds, wordIds) => {
