@@ -1,10 +1,10 @@
 import type { Scene, KeepSpan } from "../types";
 
-const GAP_MERGE_THRESHOLD_S = 0.05; // 50ms 이하 갭은 병합
+const GAP_MERGE_THRESHOLD_S = 0.05;
 const LINE_BREAK_GAP_THRESHOLD_S = 0.58;
-const SOFT_LINE_LENGTH = 24;
-const HARD_LINE_LENGTH = 38;
-const MAX_WORDS_PER_LINE = 10;
+const SOFT_LINE_LENGTH = 18;
+const HARD_LINE_LENGTH = 28;
+const MAX_WORDS_PER_LINE = 8;
 
 /**
  * 씬 배열과 deleted 상태로부터 초 단위 keep-span 목록을 산출한다.

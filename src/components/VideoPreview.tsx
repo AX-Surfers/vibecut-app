@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback, useMemo, useState } from "react";
+import { useEffect, useRef, useCallback, useMemo, useState, KeyboardEvent } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { readFile } from "@tauri-apps/plugin-fs";
 import { useVideoStore } from "../state/videoStore";
@@ -28,7 +28,7 @@ export function VideoPreview({
   transcriptProgress,
 }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const { currentTime, setSeekFn, setCurrentTime, setPlaying, skipDeletedMode } = useVideoStore();
+  const { currentTime, setSeekFn, setCurrentTime, setPlaying, isPlaying, skipDeletedMode } = useVideoStore();
   const scenes = useTranscriptStore((s) => s.scenes);
   const selectedSceneId = useTranscriptStore((s) => s.selectedSceneId);
   const subtitleDrafts = useTranscriptStore((s) => s.subtitleDrafts);
@@ -36,6 +36,8 @@ export function VideoPreview({
   const [videoError, setVideoError] = useState<string | null>(null);
   const [sourceIndex, setSourceIndex] = useState(0);
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
+  const [videoDuration, setVideoDuration] = useState(0);
+  const [isSeeking, setIsSeeking] = useState(false);
 
   const videoSources = useMemo(() => {
     if (!videoFile) return [];
@@ -159,6 +161,28 @@ export function VideoPreview({
   const handleLoadedData = useCallback(() => {
     setVideoError(null);
   }, []);
+  const handleLoadedMetadata = useCallback((e: React.SyntheticEvent<HTMLVideoElement>) => {
+    setVideoDuration(e.currentTarget.duration || 0);
+  }, []);
+  const handleTogglePlay = useCallback(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    if (video.paused) void video.play();
+    else video.pause();
+  }, []);
+  const handleSeekBar = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const t = parseFloat(e.target.value);
+    setIsSeeking(true);
+    if (videoRef.current) videoRef.current.currentTime = t;
+    setCurrentTime(t);
+  }, [setCurrentTime]);
+  const handleSeekBarMouseUp = useCallback(() => setIsSeeking(false), []);
+  const handlePlayerKeyDown = useCallback((e: KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === " " || e.code === "Space") {
+      e.preventDefault();
+      handleTogglePlay();
+    }
+  }, [handleTogglePlay]);
   const handleVideoError = useCallback(() => {
     if (sourceIndex < videoSources.length - 1) {
       setSourceIndex((current) => current + 1);
@@ -196,6 +220,7 @@ export function VideoPreview({
             <div className="video-preview__meta-card">
               <span className="video-preview__meta-label">영상</span>
               <strong className="video-preview__meta-value">{videoFile.replace(/.*\//, "")}</strong>
+              <button className="btn btn--ghost btn--sm" onClick={onOpenVideo}>교체</button>
             </div>
             {transcriptProgress && (
               <div className="video-preview__progress-card">
@@ -232,7 +257,12 @@ export function VideoPreview({
               </div>
             </div>
           </div>
-          <div className="video-preview__stage">
+          <div
+            className="video-preview__stage"
+            tabIndex={0}
+            onKeyDown={handlePlayerKeyDown}
+            onClick={handleTogglePlay}
+          >
             <video
               ref={videoRef}
               key={videoSrc}
@@ -242,8 +272,8 @@ export function VideoPreview({
               onPlay={handlePlay}
               onPause={handlePause}
               onLoadedData={handleLoadedData}
+              onLoadedMetadata={handleLoadedMetadata}
               onError={handleVideoError}
-              controls
               preload="auto"
               playsInline
             />
@@ -256,20 +286,54 @@ export function VideoPreview({
                 ))}
               </div>
             )}
+            <div className="video-preview__play-indicator" aria-hidden="true">
+              {isPlaying ? "⏸" : "▶"}
+            </div>
           </div>
           {videoError && <div className="video-preview__error">{videoError}</div>}
-          <div className="video-preview__controls">
-            <label className="video-preview__skip-toggle">
+          <div className="video-player-controls" onClick={(e) => e.stopPropagation()}>
+            <button
+              className="video-player-controls__play-btn"
+              onClick={handleTogglePlay}
+              aria-label={isPlaying ? "일시정지" : "재생"}
+            >
+              {isPlaying ? (
+                <svg width="18" height="18" viewBox="0 0 18 18" fill="currentColor">
+                  <rect x="3" y="2" width="4" height="14" rx="1"/>
+                  <rect x="11" y="2" width="4" height="14" rx="1"/>
+                </svg>
+              ) : (
+                <svg width="18" height="18" viewBox="0 0 18 18" fill="currentColor">
+                  <path d="M4 2.5l12 6.5-12 6.5V2.5z"/>
+                </svg>
+              )}
+            </button>
+            <div className="video-player-controls__seek">
+              <input
+                type="range"
+                className="video-player-controls__seekbar"
+                min={0}
+                max={videoDuration || 100}
+                step={0.05}
+                value={isSeeking ? undefined : currentTime}
+                defaultValue={0}
+                onChange={handleSeekBar}
+                onMouseUp={handleSeekBarMouseUp}
+                onTouchEnd={handleSeekBarMouseUp}
+                aria-label="재생 위치"
+              />
+            </div>
+            <span className="video-player-controls__time">
+              {formatDuration(currentTime)} / {formatDuration(videoDuration)}
+            </span>
+            <label className="video-player-controls__skip-toggle" title="삭제된 구간 건너뛰기">
               <input
                 type="checkbox"
                 checked={skipDeletedMode}
                 onChange={() => useVideoStore.getState().toggleSkipMode()}
               />
-              유지 구간만 재생
+              컷 스킵
             </label>
-            <button className="btn btn--secondary" onClick={onOpenVideo}>
-              다른 영상 열기
-            </button>
           </div>
         </>
       ) : (

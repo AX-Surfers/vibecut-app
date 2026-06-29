@@ -66,6 +66,15 @@ export function SceneCard({
     mergeWithPrevious(sceneId);
   }, [mergeWithPrevious]);
 
+  const handleSeekWord = useCallback((start: number) => {
+    onSelect?.();
+    if (seekTo) seekTo(start);
+  }, [onSelect, seekTo]);
+
+  const handleSeekScene = useCallback(() => {
+    if (seekTo) seekTo(scene.start);
+  }, [seekTo, scene.start]);
+
   return (
     <div
       className={[
@@ -121,6 +130,7 @@ export function SceneCard({
               onSelect={onSelect}
               onToggleWord={handleToggleWord}
               onSplitWord={(wordId) => handleWordContextMenu(wordId)}
+              onSeekWord={handleSeekWord}
             />
 
             <SceneSubtitleEditor
@@ -130,6 +140,7 @@ export function SceneCard({
               onSelectScene={onSelectScene}
               onCommitSubtitle={handleCommitSubtitle}
               onMergeWithPrevious={handleMergeWithPrevious}
+              onFocusSeek={handleSeekScene}
             />
           </>
         )}

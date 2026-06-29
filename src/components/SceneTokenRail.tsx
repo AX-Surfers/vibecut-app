@@ -9,6 +9,7 @@ interface Props {
   onSelect?: () => void;
   onToggleWord: (wordId: string, start: number) => void;
   onSplitWord: (wordId: string, index: number) => void;
+  onSeekWord?: (start: number) => void;
 }
 
 export function SceneTokenRail({
@@ -19,6 +20,7 @@ export function SceneTokenRail({
   onSelect,
   onToggleWord,
   onSplitWord,
+  onSeekWord,
 }: Props) {
   const tokenRailRef = useRef<HTMLDivElement>(null);
   const visibleWords = words.filter((word) => !word.deleted);
@@ -89,6 +91,7 @@ export function SceneTokenRail({
               onSelect?.();
               tokenRailRef.current?.focus();
               setCaretIndex(index + 1);
+              onSeekWord?.(word.start);
             }}
             onContextMenu={(event) => {
               event.preventDefault();

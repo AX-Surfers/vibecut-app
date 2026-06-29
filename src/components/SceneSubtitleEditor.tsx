@@ -10,6 +10,7 @@ interface Props {
   onSelectScene?: (sceneId: string) => void;
   onCommitSubtitle: (sceneId: string, text: string) => void;
   onMergeWithPrevious: (sceneId: string, previousSceneId: string) => void;
+  onFocusSeek?: () => void;
 }
 
 export function SceneSubtitleEditor({
@@ -19,6 +20,7 @@ export function SceneSubtitleEditor({
   onSelectScene,
   onCommitSubtitle,
   onMergeWithPrevious,
+  onFocusSeek,
 }: Props) {
   const subtitle = buildSubtitleText(scene);
   const setSceneSubtitleDraft = useTranscriptStore((s) => s.setSubtitleDraft);
@@ -84,7 +86,7 @@ export function SceneSubtitleEditor({
           setSubtitleDraft(nextValue);
           setSceneSubtitleDraft(scene.id, nextValue);
         }}
-        onFocus={() => onSelect?.()}
+        onFocus={() => { onSelect?.(); onFocusSeek?.(); }}
         onBlur={(event) => commitSubtitle(event.target.value)}
         onKeyDown={handleKeyDown}
         rows={Math.max(2, subtitleLines.length || 1)}
