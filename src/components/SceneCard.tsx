@@ -33,9 +33,12 @@ export function SceneCard({
   const setSubtitleOverride = useTranscriptStore((s) => s.setSubtitleOverride);
   const splitScene = useTranscriptStore((s) => s.splitScene);
   const mergeWithPrevious = useTranscriptStore((s) => s.mergeWithPrevious);
+  const deleteScene = useTranscriptStore((s) => s.deleteScene);
+  const restoreScene = useTranscriptStore((s) => s.restoreScene);
   const seekTo = useVideoStore((s) => s.seekTo);
   const duration = scene.end - scene.start;
   const keptWords = useMemo(() => scene.words.filter((word) => !word.deleted), [scene.words]);
+  const isDeleted = keptWords.length === 0;
 
   const handleWordContextMenu = useCallback(
     (wordId: string) => {
@@ -69,6 +72,7 @@ export function SceneCard({
         "scene-card",
         isSuggested ? "scene-card--suggested" : "",
         isSelected ? "scene-card--selected" : "",
+        isDeleted ? "scene-card--deleted" : "",
       ]
         .filter(Boolean)
         .join(" ")}
@@ -84,30 +88,54 @@ export function SceneCard({
             <span className="scene-card__source">{scene.sourceFile.replace(/^.*\//, "")}</span>
             <span className="scene-card__timestamp">{formatTimestamp(scene.start, duration)}</span>
             {isSuggested && <span className="scene-card__badge">추천</span>}
+            {isDeleted && <span className="scene-card__badge scene-card__badge--cut">컷</span>}
+          </div>
+          <div className="scene-card__actions">
+            {isDeleted ? (
+              <button
+                className="scene-card__action-btn scene-card__action-btn--restore"
+                onClick={(e) => { e.stopPropagation(); restoreScene(scene.id); }}
+                title="씬 복구"
+              >
+                복구
+              </button>
+            ) : (
+              <button
+                className="scene-card__action-btn scene-card__action-btn--delete"
+                onClick={(e) => { e.stopPropagation(); deleteScene(scene.id); }}
+                title="씬 삭제 (영상 클립 제외)"
+              >
+                ✕
+              </button>
+            )}
           </div>
         </div>
 
-        <SceneTokenRail
-          words={scene.words}
-          isSelected={isSelected}
-          dropWarningWordIds={dropWarningWordIds}
-          suggestedWordIds={suggestedWordIds}
-          onSelect={onSelect}
-          onToggleWord={handleToggleWord}
-          onSplitWord={(wordId) => handleWordContextMenu(wordId)}
-        />
+        {!isDeleted && (
+          <>
+            <SceneTokenRail
+              words={scene.words}
+              isSelected={isSelected}
+              dropWarningWordIds={dropWarningWordIds}
+              suggestedWordIds={suggestedWordIds}
+              onSelect={onSelect}
+              onToggleWord={handleToggleWord}
+              onSplitWord={(wordId) => handleWordContextMenu(wordId)}
+            />
 
-        <SceneSubtitleEditor
-          scene={scene}
-          previousSceneId={previousSceneId}
-          onSelect={onSelect}
-          onSelectScene={onSelectScene}
-          onCommitSubtitle={handleCommitSubtitle}
-          onMergeWithPrevious={handleMergeWithPrevious}
-        />
+            <SceneSubtitleEditor
+              scene={scene}
+              previousSceneId={previousSceneId}
+              onSelect={onSelect}
+              onSelectScene={onSelectScene}
+              onCommitSubtitle={handleCommitSubtitle}
+              onMergeWithPrevious={handleMergeWithPrevious}
+            />
+          </>
+        )}
 
-        {keptWords.length === 0 && (
-          <div className="scene-card__empty">모든 토큰이 제외되었습니다. 필요하면 컷 초기화로 다시 복구할 수 있습니다.</div>
+        {isDeleted && (
+          <div className="scene-card__deleted-msg">이 씬의 영상 클립이 제외됩니다.</div>
         )}
       </div>
     </div>

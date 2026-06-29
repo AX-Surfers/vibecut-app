@@ -675,6 +675,42 @@
   gap: 8px;
   min-width: 0;
   flex-wrap: wrap;
+  flex: 1;
+}
+
+.scene-card__actions {
+  flex-shrink: 0;
+}
+
+.scene-card__action-btn {
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 13px;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  transition: background 0.12s;
+  line-height: 1;
+}
+
+.scene-card__action-btn--delete {
+  color: var(--muted);
+}
+
+.scene-card__action-btn--delete:hover {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+.scene-card__action-btn--restore {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--brand);
+  background: #e8f0fe;
+}
+
+.scene-card__action-btn--restore:hover {
+  background: #d2e3fc;
 }
 
 .scene-card__timestamp {
@@ -701,6 +737,12 @@
   padding: 3px 9px;
   border-radius: var(--radius-pill);
   font-weight: 600;
+}
+
+.scene-card__badge--cut {
+  color: #dc2626;
+  background: #fee2e2;
+  border-color: #fca5a5;
 }
 
 .scene-card__tokens {
@@ -814,6 +856,25 @@
   padding: 0 16px 16px;
   color: var(--muted);
   font-size: 12px;
+}
+
+.scene-card--deleted {
+  opacity: 0.55;
+}
+
+.scene-card--deleted .scene-card__rail {
+  background: #fee2e2;
+}
+
+.scene-card--deleted .scene-card__index {
+  color: #dc2626;
+}
+
+.scene-card__deleted-msg {
+  padding: 12px 16px;
+  color: #dc2626;
+  font-size: 12px;
+  font-weight: 500;
 }
 
 /* ── Export panel (light theme) ─────────────────────────────────────── */

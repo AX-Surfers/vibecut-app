@@ -17,6 +17,8 @@ interface TranscriptState {
   toggleWord: (wordId: string) => void;
   setWordDeleted: (wordIds: string[], deleted: boolean) => void;
   clearDeletedWords: () => void;
+  deleteScene: (sceneId: string) => void;
+  restoreScene: (sceneId: string) => void;
   setSubtitleOverride: (sceneId: string, text: string) => void;
   setSelectedSceneId: (sceneId: string | null) => void;
   setSubtitleDraft: (sceneId: string, text: string) => void;
@@ -87,6 +89,24 @@ export const useTranscriptStore = create<TranscriptState>((set, get) => ({
         });
 
         return touched ? { ...scene, words, subtitleOverride: undefined } : scene;
+      }),
+    }));
+  },
+
+  deleteScene(sceneId) {
+    set((state) => ({
+      scenes: state.scenes.map((scene) => {
+        if (scene.id !== sceneId) return scene;
+        return { ...scene, words: scene.words.map((w) => ({ ...w, deleted: true })), subtitleOverride: undefined };
+      }),
+    }));
+  },
+
+  restoreScene(sceneId) {
+    set((state) => ({
+      scenes: state.scenes.map((scene) => {
+        if (scene.id !== sceneId) return scene;
+        return { ...scene, words: scene.words.map((w) => ({ ...w, deleted: false })), subtitleOverride: undefined };
       }),
     }));
   },
