@@ -1,9 +1,9 @@
 import { useState, useMemo } from "react";
-import { SceneDrawer } from "./components/SceneDrawer";
 import { VideoPreview } from "./components/VideoPreview";
 import { ExportPanel } from "./components/ExportPanel";
 import { SceneSubtitleEditor } from "./components/SceneSubtitleEditor";
 import { SceneTokenRail } from "./components/SceneTokenRail";
+import { SceneList } from "./components/SceneList";
 import { useTranscriptStore } from "./state/transcriptStore";
 import { useProjectStore } from "./state/projectStore";
 import { useProjectAutosave } from "./hooks/useProjectAutosave";
@@ -23,7 +23,6 @@ export default function App() {
   const [dropWarningWordIds, setDropWarningWordIds] = useState<Set<string>>(new Set());
   const [suggestedWordIds, setSuggestedWordIds] = useState<Set<string>>(new Set());
   const [suggestedSceneIds, setSuggestedSceneIds] = useState<Set<string>>(new Set());
-  const [drawerOpen, setDrawerOpen] = useState(false);
   const {
     pythonWarning,
     pipelineMessage,
@@ -93,6 +92,19 @@ export default function App() {
           />
         </div>
 
+        <div className="app-panel app-panel--scenes">
+          <div className="scenes-header">
+            <span className="scenes-header__title">
+              씬 목록{suggestedSceneIds.size > 0 ? ` (${suggestedSceneIds.size})` : ""}
+            </span>
+          </div>
+          <SceneList
+            dropWarningWordIds={dropWarningWordIds}
+            suggestedWordIds={suggestedWordIds}
+            suggestedSceneIds={suggestedSceneIds}
+          />
+        </div>
+
         <div className="app-panel app-panel--workspace">
           <div className="workspace-header">
             <span className="workspace-header__title">
@@ -100,13 +112,6 @@ export default function App() {
                 ? `씬 ${selectedSceneIndex + 1} · ${formatTimestamp(selectedScene.start, selectedScene.end - selectedScene.start)}`
                 : "자막 편집"}
             </span>
-            <div className="workspace-header__actions">
-              {scenes.length > 0 && (
-                <button className="btn btn--ghost" onClick={() => setDrawerOpen(true)}>
-                  씬 목록{suggestedSceneIds.size > 0 ? ` (${suggestedSceneIds.size})` : ""}
-                </button>
-              )}
-            </div>
           </div>
 
           <div className="workspace-subtitle">
@@ -151,14 +156,6 @@ export default function App() {
           />
         </div>
       </main>
-
-      <SceneDrawer
-        open={drawerOpen}
-        onClose={() => setDrawerOpen(false)}
-        dropWarningWordIds={dropWarningWordIds}
-        suggestedWordIds={suggestedWordIds}
-        suggestedSceneIds={suggestedSceneIds}
-      />
     </div>
   );
 }
