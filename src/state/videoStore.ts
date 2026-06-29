@@ -14,7 +14,7 @@ interface VideoState {
 export const useVideoStore = create<VideoState>((set) => ({
   currentTime: 0,
   isPlaying: false,
-  skipDeletedMode: false,
+  skipDeletedMode: true,
   seekTo: null,
 
   setSeekFn: (fn) => set({ seekTo: fn }),

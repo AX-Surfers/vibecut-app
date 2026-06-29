@@ -909,6 +909,7 @@
   padding: 10px 12px;
   outline: none;
   caret-color: var(--brand);
+  cursor: text;
   transition: background 0.12s, border-color 0.12s, box-shadow 0.12s;
 }
 

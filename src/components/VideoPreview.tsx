@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback, useMemo, useState, KeyboardEvent } from "react";
+import { useEffect, useRef, useCallback, useMemo, useState } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { readFile } from "@tauri-apps/plugin-fs";
 import { useVideoStore } from "../state/videoStore";
@@ -30,7 +30,6 @@ export function VideoPreview({
   const videoRef = useRef<HTMLVideoElement>(null);
   const { currentTime, setSeekFn, setCurrentTime, setPlaying, isPlaying, skipDeletedMode } = useVideoStore();
   const scenes = useTranscriptStore((s) => s.scenes);
-  const selectedSceneId = useTranscriptStore((s) => s.selectedSceneId);
   const subtitleDrafts = useTranscriptStore((s) => s.subtitleDrafts);
   const [isDragActive, setIsDragActive] = useState(false);
   const [videoError, setVideoError] = useState<string | null>(null);
@@ -63,20 +62,20 @@ export function VideoPreview({
   );
   const showTranscriptProgress =
     transcriptProgress !== null && transcriptProgress.stage !== "done" && transcriptProgress.stage !== "error";
+  // 현재 재생 시간을 포함하는 씬 자막을 반환 — selectedSceneId와 무관
   const activeSubtitle = useMemo(() => {
-    const selectedScene = selectedSceneId
-      ? scenes.find((scene) => scene.id === selectedSceneId)
-      : undefined;
-    const selectedDraft = selectedScene ? subtitleDrafts[selectedScene.id] : undefined;
-
-    if (selectedScene) {
-      if (selectedDraft !== undefined) return selectedDraft;
-      return buildSubtitleText(selectedScene);
-    }
-
-    const activeScene = scenes.find((scene) => currentTime >= scene.start && currentTime <= scene.end);
-    return activeScene ? buildSubtitleText(activeScene) : "";
-  }, [currentTime, scenes, selectedSceneId, subtitleDrafts]);
+    const t = currentTime;
+    const activeScene = scenes.find((scene) => {
+      const keptWords = scene.words.filter((w) => !w.deleted);
+      if (keptWords.length === 0) return false;
+      const first = keptWords[0].start;
+      const last = keptWords[keptWords.length - 1].end;
+      return t >= first - 0.05 && t <= last + 0.15;
+    });
+    if (!activeScene) return "";
+    const draft = subtitleDrafts[activeScene.id];
+    return draft ?? buildSubtitleText(activeScene);
+  }, [currentTime, scenes, subtitleDrafts]);
 
   // seek 함수를 store에 등록
   const seek = useCallback((time: number) => {
@@ -89,6 +88,24 @@ export function VideoPreview({
   useEffect(() => {
     setSeekFn(seek);
   }, [seek, setSeekFn]);
+
+  // 전역 Space 키 → 재생/일시정지 (input/textarea 제외)
+  useEffect(() => {
+    const handler = (e: globalThis.KeyboardEvent) => {
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA") return;
+      if ((e.target as HTMLElement)?.isContentEditable) return;
+      if (e.code === "Space") {
+        e.preventDefault();
+        const video = videoRef.current;
+        if (!video) return;
+        if (video.paused) void video.play();
+        else video.pause();
+      }
+    };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, []);
 
   useEffect(() => {
     setSourceIndex(0);
@@ -177,12 +194,6 @@ export function VideoPreview({
     setCurrentTime(t);
   }, [setCurrentTime]);
   const handleSeekBarMouseUp = useCallback(() => setIsSeeking(false), []);
-  const handlePlayerKeyDown = useCallback((e: KeyboardEvent<HTMLDivElement>) => {
-    if (e.key === " " || e.code === "Space") {
-      e.preventDefault();
-      handleTogglePlay();
-    }
-  }, [handleTogglePlay]);
   const handleVideoError = useCallback(() => {
     if (sourceIndex < videoSources.length - 1) {
       setSourceIndex((current) => current + 1);
@@ -260,7 +271,6 @@ export function VideoPreview({
           <div
             className="video-preview__stage"
             tabIndex={0}
-            onKeyDown={handlePlayerKeyDown}
             onClick={handleTogglePlay}
           >
             <video
