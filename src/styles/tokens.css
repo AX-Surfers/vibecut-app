@@ -1,3 +1,5 @@
+@import url("https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap");
+
 @font-face {
   font-family: "Pretendard Variable";
   font-weight: 45 920;
@@ -5,7 +7,6 @@
   font-display: swap;
   src: url("../assets/fonts/PretendardVariable.woff2") format("woff2-variations");
 }
-@import url("https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&display=swap");
 
 :root {
   --brand:          #0573F0;

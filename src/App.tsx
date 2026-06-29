@@ -103,7 +103,7 @@ export default function App() {
             <div className="workspace-header__actions">
               {scenes.length > 0 && (
                 <button className="btn btn--ghost" onClick={() => setDrawerOpen(true)}>
-                  씬 목록
+                  씬 목록{suggestedSceneIds.size > 0 ? ` (${suggestedSceneIds.size})` : ""}
                 </button>
               )}
             </div>
