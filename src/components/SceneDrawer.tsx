@@ -10,15 +10,16 @@ interface Props {
 }
 
 export function SceneDrawer({ open, onClose, dropWarningWordIds, suggestedWordIds, suggestedSceneIds }: Props) {
-  if (!open) return null;
-
   useEffect(() => {
+    if (!open) return;
     const handler = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
     };
     document.addEventListener("keydown", handler);
     return () => document.removeEventListener("keydown", handler);
-  }, [onClose]);
+  }, [open, onClose]);
+
+  if (!open) return null;
 
   return (
     <>
