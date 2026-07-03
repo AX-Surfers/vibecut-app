@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { save } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
 import { useTranscriptStore } from "../state/transcriptStore";
@@ -23,7 +23,7 @@ export function ExportPanel({ onDropWarnings, onSuggestionPreview }: Props) {
   const scenes = useTranscriptStore((s) => s.scenes);
   const setWordDeleted = useTranscriptStore((s) => s.setWordDeleted);
   const clearDeletedWords = useTranscriptStore((s) => s.clearDeletedWords);
-  const { templatePath } = useProjectStore();
+  const { templatePath, capCutProjectPath } = useProjectStore();
   const videoFile = useTranscriptStore((s) => s.videoFile);
 
   const [outputPath, setOutputPath] = useState<string | null>(null);
@@ -32,6 +32,12 @@ export function ExportPanel({ onDropWarnings, onSuggestionPreview }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [autoEditSummary, setAutoEditSummary] = useState<string | null>(null);
   const [analysis, setAnalysis] = useState<AutoEditAnalysisResult | null>(null);
+
+  // CapCut 프로젝트를 가져온 경우 원본 draft로 바로 되돌려쓸 수 있도록 저장 위치를
+  // 기본값으로 채워둔다 — "저장 위치 선택"으로 언제든 다른 경로로 바꿀 수 있다.
+  useEffect(() => {
+    if (capCutProjectPath) setOutputPath(capCutProjectPath);
+  }, [capCutProjectPath]);
 
   const handleSelectOutput = useCallback(async () => {
     const selected = await save({

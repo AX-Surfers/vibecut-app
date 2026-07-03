@@ -31,6 +31,7 @@ export function useVideoPipeline(): UseVideoPipelineResult {
   const {
     setProjectPath,
     setTemplatePath,
+    setCapCutProjectPath,
   } = useProjectStore();
 
   const [pythonWarning, setPythonWarning] = useState<string | null>(null);
@@ -63,6 +64,7 @@ export function useVideoPipeline(): UseVideoPipelineResult {
     if (!saved) return;
 
     if (saved.templatePath) setTemplatePath(saved.templatePath);
+    if (saved.capCutProjectPath) setCapCutProjectPath(saved.capCutProjectPath);
 
     const transcriptStore = useTranscriptStore.getState();
 
@@ -79,7 +81,7 @@ export function useVideoPipeline(): UseVideoPipelineResult {
     for (const [sceneId, text] of Object.entries(saved.subtitleOverrides)) {
       transcriptStore.setSubtitleOverride(sceneId, text);
     }
-  }, [setTemplatePath]);
+  }, [setTemplatePath, setCapCutProjectPath]);
 
   const resolveTemplatePath = useCallback(async (videoDirectory: string) => {
     const localTemplatePath = `${videoDirectory}/draft_info.json`;
@@ -152,8 +154,10 @@ export function useVideoPipeline(): UseVideoPipelineResult {
   }, [loadFromJson, resolveTemplatePath, restoreProjectState, setProjectPath, setTemplatePath]);
 
   const openVideoPath = useCallback(async (videoPath: string) => {
+    // 새 영상을 직접 여는 경우엔 이전 프로젝트에서 남은 CapCut 되돌려쓰기 대상 경로를 지운다
+    setCapCutProjectPath(null);
     await runTranscriptionPipeline(videoPath);
-  }, [runTranscriptionPipeline]);
+  }, [runTranscriptionPipeline, setCapCutProjectPath]);
 
   const handleOpenVideo = useCallback(async () => {
     const selected = await open({
@@ -195,6 +199,10 @@ export function useVideoPipeline(): UseVideoPipelineResult {
       const raw = await invoke<string>("read_capcut_cut_project", { projectPath });
       const imported = JSON.parse(raw) as CapcutCutImportResult;
 
+      // 가져온 원본 CapCut draft로 내보내기 기본 저장 위치를 맞춰둔다 — 편집 후
+      // 곧바로 같은 CapCut 프로젝트에 반영할 수 있도록(사용자가 다른 경로로 바꿀 수도 있음)
+      setCapCutProjectPath(imported.templatePath);
+
       await runTranscriptionPipeline(imported.videoPath, {
         keepSpans: imported.keepSpans,
         explicitTemplatePath: imported.templatePath,
@@ -204,7 +212,7 @@ export function useVideoPipeline(): UseVideoPipelineResult {
       setPipelineMessage(null);
       setPipelineError(error instanceof Error ? error.message : String(error));
     }
-  }, [runTranscriptionPipeline]);
+  }, [runTranscriptionPipeline, setCapCutProjectPath]);
 
   return {
     pythonWarning,

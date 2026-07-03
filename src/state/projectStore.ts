@@ -4,11 +4,11 @@ import type { ProjectState } from "../types";
 interface ProjectStoreState {
   projectPath: string | null;
   templatePath: string | null;
-  capCutProjectPath: string | null; // legacy
+  capCutProjectPath: string | null; // 가져온 원본 CapCut 프로젝트 경로 — 내보내기 기본 저장 위치로 쓰인다
   isDirty: boolean;
   setProjectPath: (path: string) => void;
   setTemplatePath: (path: string) => void;
-  setCapCutProjectPath: (path: string) => void;
+  setCapCutProjectPath: (path: string | null) => void;
   markDirty: () => void;
   markClean: () => void;
   toProjectState: (
