@@ -42,7 +42,6 @@ export function VideoPreview({
   const [sourceIndex, setSourceIndex] = useState(0);
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
   const [videoDuration, setVideoDuration] = useState(0);
-  const [isSeeking, setIsSeeking] = useState(false);
   // asset://·file:// 소스가 모두 실패했을 때만 true — 그 전엔 영상 전체를
   // 메모리에 읽어들이는 blob 폴백을 시도하지 않는다 (대용량 영상에서 불필요한 비용).
   const [needsBlobFallback, setNeedsBlobFallback] = useState(false);
@@ -245,11 +244,9 @@ export function VideoPreview({
   }, []);
   const handleSeekBar = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const t = parseFloat(e.target.value);
-    setIsSeeking(true);
     if (videoRef.current) videoRef.current.currentTime = t;
     setCurrentTime(t);
   }, [setCurrentTime]);
-  const handleSeekBarMouseUp = useCallback(() => setIsSeeking(false), []);
   const handleVideoError = useCallback(() => {
     if (sourceIndex < videoSources.length - 1) {
       setSourceIndex((current) => current + 1);
@@ -401,11 +398,8 @@ export function VideoPreview({
                 min={0}
                 max={videoDuration || 100}
                 step={0.05}
-                value={isSeeking ? undefined : currentTime}
-                defaultValue={0}
+                value={currentTime}
                 onChange={handleSeekBar}
-                onMouseUp={handleSeekBarMouseUp}
-                onTouchEnd={handleSeekBarMouseUp}
                 aria-label="재생 위치"
               />
             </div>
