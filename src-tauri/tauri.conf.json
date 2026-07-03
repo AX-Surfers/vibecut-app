@@ -21,7 +21,13 @@
         "minHeight": 600,
         "resizable": true
       }
-    ]
+    ],
+    "security": {
+      "assetProtocol": {
+        "enable": true,
+        "scope": ["**"]
+      }
+    }
   },
   "bundle": {
     "active": true,

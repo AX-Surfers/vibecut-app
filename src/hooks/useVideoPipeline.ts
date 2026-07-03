@@ -2,10 +2,18 @@ import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
+import { homeDir, join } from "@tauri-apps/api/path";
 import { loadProject } from "../lib/persistence";
 import { useProjectStore } from "../state/projectStore";
 import { useTranscriptStore } from "../state/transcriptStore";
-import type { PrepareTranscriptResult, TranscriptProgressPayload, WhisperSegment } from "../types";
+import type {
+  CapcutCutImportResult,
+  PrepareTranscriptResult,
+  TranscriptProgressPayload,
+  WhisperSegment,
+} from "../types";
+
+const CAPCUT_PROJECTS_ROOT = "Movies/CapCut/User Data/Projects/com.lveditor.draft";
 
 interface UseVideoPipelineResult {
   pythonWarning: string | null;
@@ -14,6 +22,8 @@ interface UseVideoPipelineResult {
   transcriptProgress: TranscriptProgressPayload | null;
   openVideoPath: (videoPath: string) => Promise<void>;
   handleOpenVideo: () => Promise<void>;
+  handleOpenCapcutProject: () => Promise<void>;
+  handleRetranscribe: () => Promise<void>;
 }
 
 export function useVideoPipeline(): UseVideoPipelineResult {
@@ -55,9 +65,15 @@ export function useVideoPipeline(): UseVideoPipelineResult {
     if (saved.templatePath) setTemplatePath(saved.templatePath);
 
     const transcriptStore = useTranscriptStore.getState();
-    for (const wordId of saved.deletedWordIds) {
-      const word = transcriptStore.scenes.flatMap((scene) => scene.words).find((candidate) => candidate.id === wordId);
-      if (word && !word.deleted) transcriptStore.toggleWord(wordId);
+
+    if (saved.version === 2) {
+      // split/merge/타이밍 편집까지 그대로 보존된 scenes를 재구성 없이 통째로 적용
+      transcriptStore.loadFromSaved(saved.scenes, transcriptStore.sourceFile, transcriptStore.videoFile);
+      return;
+    }
+
+    if (saved.deletedWordIds.length > 0) {
+      transcriptStore.setWordDeleted(saved.deletedWordIds, true);
     }
 
     for (const [sceneId, text] of Object.entries(saved.subtitleOverrides)) {
@@ -80,13 +96,16 @@ export function useVideoPipeline(): UseVideoPipelineResult {
     }
   }, [setTemplatePath]);
 
-  const openVideoPath = useCallback(async (videoPath: string) => {
+  const runTranscriptionPipeline = useCallback(async (
+    videoPath: string,
+    options?: { keepSpans?: [number, number][]; explicitTemplatePath?: string; force?: boolean }
+  ) => {
     try {
       setPipelineError(null);
       setTranscriptProgress({
         stage: "starting",
         progress: 3,
-        message: "전사 작업을 시작하는 중…",
+        message: options?.force ? "다시 전사를 시작하는 중…" : "전사 작업을 시작하는 중…",
       });
 
       const videoDirectory = videoPath.replace(/\/[^/]+$/, "");
@@ -95,7 +114,8 @@ export function useVideoPipeline(): UseVideoPipelineResult {
       setPipelineMessage("자막 전사 준비 중…");
       const prepRaw = await invoke<string>("prepare_video_transcript", {
         videoPath,
-        model: "small",
+        model: "medium",
+        force: options?.force ?? false,
       });
       const prep = JSON.parse(prepRaw) as PrepareTranscriptResult;
       setPipelineMessage(prep.usedCache ? "캐시된 자막을 불러오는 중…" : "전사 결과를 불러오는 중…");
@@ -103,8 +123,12 @@ export function useVideoPipeline(): UseVideoPipelineResult {
       const raw = await invoke<string>("read_words_json", { path: prep.wordsJsonPath });
       const segments = JSON.parse(raw) as WhisperSegment[];
 
-      await resolveTemplatePath(videoDirectory);
-      loadFromJson(segments, prep.wordsJsonPath, videoPath);
+      if (options?.explicitTemplatePath) {
+        setTemplatePath(options.explicitTemplatePath);
+      } else {
+        await resolveTemplatePath(videoDirectory);
+      }
+      loadFromJson(segments, prep.wordsJsonPath, videoPath, options?.keepSpans);
       setProjectPath(projectFilePath);
       await restoreProjectState(projectFilePath);
 
@@ -125,7 +149,11 @@ export function useVideoPipeline(): UseVideoPipelineResult {
       });
       setPipelineError(error instanceof Error ? error.message : String(error));
     }
-  }, [loadFromJson, resolveTemplatePath, restoreProjectState, setProjectPath]);
+  }, [loadFromJson, resolveTemplatePath, restoreProjectState, setProjectPath, setTemplatePath]);
+
+  const openVideoPath = useCallback(async (videoPath: string) => {
+    await runTranscriptionPipeline(videoPath);
+  }, [runTranscriptionPipeline]);
 
   const handleOpenVideo = useCallback(async () => {
     const selected = await open({
@@ -138,6 +166,46 @@ export function useVideoPipeline(): UseVideoPipelineResult {
     await openVideoPath(videoPath);
   }, [openVideoPath]);
 
+  const handleRetranscribe = useCallback(async () => {
+    const videoFile = useTranscriptStore.getState().videoFile;
+    if (!videoFile) return;
+    await runTranscriptionPipeline(videoFile, { force: true });
+  }, [runTranscriptionPipeline]);
+
+  const handleOpenCapcutProject = useCallback(async () => {
+    let defaultPath: string | undefined;
+    try {
+      defaultPath = await join(await homeDir(), CAPCUT_PROJECTS_ROOT);
+    } catch {
+      defaultPath = undefined;
+    }
+
+    const selected = await open({
+      filters: [{ name: "CapCut Draft", extensions: ["json"] }],
+      defaultPath,
+      multiple: false,
+    });
+    if (!selected) return;
+
+    const projectPath = typeof selected === "string" ? selected : selected[0];
+
+    try {
+      setPipelineError(null);
+      setPipelineMessage("CapCut 프로젝트를 읽는 중…");
+      const raw = await invoke<string>("read_capcut_cut_project", { projectPath });
+      const imported = JSON.parse(raw) as CapcutCutImportResult;
+
+      await runTranscriptionPipeline(imported.videoPath, {
+        keepSpans: imported.keepSpans,
+        explicitTemplatePath: imported.templatePath,
+      });
+    } catch (error) {
+      console.error("CapCut 프로젝트 읽기 실패:", error);
+      setPipelineMessage(null);
+      setPipelineError(error instanceof Error ? error.message : String(error));
+    }
+  }, [runTranscriptionPipeline]);
+
   return {
     pythonWarning,
     pipelineMessage,
@@ -145,5 +213,7 @@ export function useVideoPipeline(): UseVideoPipelineResult {
     transcriptProgress,
     openVideoPath,
     handleOpenVideo,
+    handleOpenCapcutProject,
+    handleRetranscribe,
   };
 }

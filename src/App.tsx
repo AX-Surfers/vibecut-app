@@ -1,33 +1,39 @@
-import { useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { VideoPreview } from "./components/VideoPreview";
 import { ExportPanel } from "./components/ExportPanel";
-import { SceneDrawer } from "./components/SceneDrawer";
-import { SceneTokenRail } from "./components/SceneTokenRail";
-import { SceneSubtitleEditor } from "./components/SceneSubtitleEditor";
+import { SceneDocList } from "./components/SceneDocList";
 import { useTranscriptStore } from "./state/transcriptStore";
 import { useProjectStore } from "./state/projectStore";
 import { useProjectAutosave } from "./hooks/useProjectAutosave";
 import { useVideoPipeline } from "./hooks/useVideoPipeline";
-import { formatTimestamp } from "./lib/timeFormat";
 import "./App.css";
 
 export default function App() {
-  const {
-    scenes,
-    sourceFile,
-    videoFile,
-    selectedSceneId,
-    setSelectedSceneId,
-    toggleWord,
-    splitScene,
-    setSubtitleOverride,
-    mergeWithPrevious,
-  } = useTranscriptStore();
+  const { scenes, sourceFile, videoFile } = useTranscriptStore();
   const { isDirty } = useProjectStore();
   const [dropWarningWordIds, setDropWarningWordIds] = useState<Set<string>>(new Set());
   const [suggestedWordIds, setSuggestedWordIds] = useState<Set<string>>(new Set());
-  const [suggestedSceneIds, setSuggestedSceneIds] = useState<Set<string>>(new Set());
-  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [previewWidth, setPreviewWidth] = useState(420);
+  const isResizingRef = useRef(false);
+
+  const handleResizerMouseDown = useCallback((event: React.MouseEvent) => {
+    event.preventDefault();
+    isResizingRef.current = true;
+    document.body.style.cursor = "col-resize";
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      if (!isResizingRef.current) return;
+      setPreviewWidth(Math.min(720, Math.max(280, moveEvent.clientX)));
+    };
+    const handleMouseUp = () => {
+      isResizingRef.current = false;
+      document.body.style.cursor = "";
+      document.removeEventListener("mousemove", handleMouseMove);
+      document.removeEventListener("mouseup", handleMouseUp);
+    };
+    document.addEventListener("mousemove", handleMouseMove);
+    document.addEventListener("mouseup", handleMouseUp);
+  }, []);
 
   const {
     pythonWarning,
@@ -36,27 +42,16 @@ export default function App() {
     transcriptProgress,
     openVideoPath,
     handleOpenVideo,
+    handleOpenCapcutProject,
+    handleRetranscribe,
   } = useVideoPipeline();
 
   useProjectAutosave();
 
-  const selectedSceneIndex = scenes.findIndex((s) => s.id === selectedSceneId);
-  const selectedScene = selectedSceneIndex >= 0 ? scenes[selectedSceneIndex] : null;
-  const previousSceneId =
-    selectedSceneIndex > 0 ? scenes[selectedSceneIndex - 1]?.id : undefined;
-
-  const handleMergeWithPrevious = (sceneId: string, _prevId: string) => {
-    mergeWithPrevious(sceneId);
-  };
-
   return (
     <div className="app">
-      {pythonWarning && (
-        <div className="app-warning">{pythonWarning}</div>
-      )}
-      {pipelineError && (
-        <div className="app-warning app-warning--error">{pipelineError}</div>
-      )}
+      {pythonWarning && <div className="app-warning">{pythonWarning}</div>}
+      {pipelineError && <div className="app-warning app-warning--error">{pipelineError}</div>}
 
       <header className="app-header">
         <span className="app-title">SURFERS</span>
@@ -68,10 +63,16 @@ export default function App() {
           >
             {pipelineMessage ? "처리 중…" : "영상 열기"}
           </button>
+          <button
+            className="btn btn--ghost"
+            onClick={handleOpenCapcutProject}
+            disabled={pipelineMessage !== null}
+            title="컷 편집만 된 기존 CapCut 프로젝트의 draft_info.json 파일을 선택하세요"
+          >
+            CapCut 프로젝트 가져오기
+          </button>
         </div>
-        {pipelineMessage && (
-          <span className="app-header__status">{pipelineMessage}</span>
-        )}
+        {pipelineMessage && <span className="app-header__status">{pipelineMessage}</span>}
         {scenes.length > 0 && (
           <span className="app-header__info">
             <span>{scenes.length}개 씬</span>
@@ -83,91 +84,40 @@ export default function App() {
       </header>
 
       <main className="app-body">
-        <div className="app-panel app-panel--preview">
+        <div className="app-panel app-panel--preview" style={{ width: previewWidth }}>
           <VideoPreview
             videoFile={videoFile}
             onOpenVideo={handleOpenVideo}
             onOpenVideoPath={openVideoPath}
+            onRetranscribe={handleRetranscribe}
             pipelineMessage={pipelineMessage}
             transcriptProgress={transcriptProgress}
           />
         </div>
 
+        <div
+          className="app-resizer"
+          onMouseDown={handleResizerMouseDown}
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="미리보기 패널 크기 조절"
+        >
+          <span className="app-resizer__handle">◂▸</span>
+        </div>
+
         <div className="app-panel app-panel--workspace">
-          <div className="workspace-header">
-            <div className="workspace-header__title">
-              {selectedScene ? (
-                <>
-                  <span>씬 {selectedSceneIndex + 1}</span>
-                  <span>
-                    {formatTimestamp(
-                      selectedScene.words[0]?.start ?? 0,
-                      (selectedScene.words[selectedScene.words.length - 1]?.end ?? 0) -
-                        (selectedScene.words[0]?.start ?? 0)
-                    )}
-                  </span>
-                </>
-              ) : (
-                <span>씬을 선택하세요</span>
-              )}
-            </div>
-            <div className="workspace-header__actions">
-              <button
-                className="btn btn--ghost"
-                onClick={() => setDrawerOpen(true)}
-              >
-                씬 목록
-              </button>
-            </div>
-          </div>
-
-          <div className={`workspace-subtitle${!selectedScene ? " workspace-subtitle--empty" : ""}`}>
-            {selectedScene ? (
-              <>
-                <SceneTokenRail
-                  words={selectedScene.words}
-                  isSelected={true}
-                  dropWarningWordIds={dropWarningWordIds}
-                  suggestedWordIds={suggestedWordIds}
-                  onSelect={() => setSelectedSceneId(selectedScene.id)}
-                  onToggleWord={(wordId, _start) => toggleWord(wordId)}
-                  onSplitWord={(wordId, _index) =>
-                    splitScene(selectedScene.id, wordId)
-                  }
-                />
-                <SceneSubtitleEditor
-                  scene={selectedScene}
-                  previousSceneId={previousSceneId}
-                  onSelect={() => setSelectedSceneId(selectedScene.id)}
-                  onSelectScene={setSelectedSceneId}
-                  onCommitSubtitle={(sceneId, text) =>
-                    setSubtitleOverride(sceneId, text)
-                  }
-                  onMergeWithPrevious={handleMergeWithPrevious}
-                />
-              </>
-            ) : (
-              <span>영상을 열고 씬을 선택하세요</span>
-            )}
-          </div>
-
+          <SceneDocList
+            dropWarningWordIds={dropWarningWordIds}
+            suggestedWordIds={suggestedWordIds}
+          />
           <ExportPanel
             onDropWarnings={setDropWarningWordIds}
-            onSuggestionPreview={(sceneIds, wordIds) => {
-              setSuggestedSceneIds(sceneIds);
+            onSuggestionPreview={(_sceneIds, wordIds) => {
               setSuggestedWordIds(wordIds);
             }}
           />
         </div>
       </main>
-
-      <SceneDrawer
-        open={drawerOpen}
-        onClose={() => setDrawerOpen(false)}
-        dropWarningWordIds={dropWarningWordIds}
-        suggestedWordIds={suggestedWordIds}
-        suggestedSceneIds={suggestedSceneIds}
-      />
     </div>
   );
 }

@@ -4,12 +4,10 @@ import { useTranscriptStore } from "../state/transcriptStore";
 import { SceneCard } from "./SceneCard";
 
 interface Props {
-  dropWarningWordIds?: Set<string>;
-  suggestedWordIds?: Set<string>;
   suggestedSceneIds?: Set<string>;
 }
 
-export function SceneList({ dropWarningWordIds, suggestedWordIds, suggestedSceneIds }: Props) {
+export function SceneList({ suggestedSceneIds }: Props) {
   const scenes = useTranscriptStore((s) => s.scenes);
   const selectedSceneId = useTranscriptStore((s) => s.selectedSceneId);
   const setSelectedSceneId = useTranscriptStore((s) => s.setSelectedSceneId);
@@ -41,13 +39,9 @@ export function SceneList({ dropWarningWordIds, suggestedWordIds, suggestedScene
         <SceneCard
           index={index}
           scene={scenes[index]}
-          previousSceneId={scenes[index - 1]?.id}
-          dropWarningWordIds={dropWarningWordIds}
-          suggestedWordIds={suggestedWordIds}
           isSuggested={suggestedSceneIds?.has(scenes[index].id)}
           isSelected={selectedSceneId === scenes[index].id}
           onSelect={() => setSelectedSceneId(scenes[index].id)}
-          onSelectScene={setSelectedSceneId}
         />
       )}
     />

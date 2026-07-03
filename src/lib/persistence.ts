@@ -10,7 +10,7 @@ export async function loadProject(path: string): Promise<ProjectState | null> {
   try {
     const raw = await invoke<string>("load_project", { path });
     const parsed = JSON.parse(raw) as ProjectState;
-    if (parsed.version !== 1) throw new Error("Unknown project version");
+    if (parsed.version !== 1 && parsed.version !== 2) throw new Error("Unknown project version");
     return parsed;
   } catch {
     return null;

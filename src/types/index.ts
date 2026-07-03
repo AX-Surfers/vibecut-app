@@ -71,6 +71,22 @@ export interface PrepareTranscriptResult {
   stdout: string;
 }
 
+// ── 기존 CapCut 프로젝트(컷 편집만 된) 가져오기 ──────────────────────────────
+
+export interface CapcutCutImportResult {
+  videoPath: string;
+  templatePath: string;
+  keepSpans: [number, number][];
+}
+
+// ── 단어 파형 편집 ───────────────────────────────────────────────────────────
+
+export interface WaveformResult {
+  peaks: [number, number][]; // [min, max] per column, -1..1 정규화
+  sampleRate: number;
+  durationSec: number;
+}
+
 export interface TranscriptProgressPayload {
   stage: "starting" | "audio" | "transcribe" | "dump" | "done" | "error";
   progress: number;
@@ -93,7 +109,9 @@ export interface AutoEditAnalysisResult {
 
 // ── 프로젝트 저장 형식 (.aside.json) ─────────────────────────────────────────
 
-export interface ProjectState {
+// v1: 원본 segments를 다시 씬으로 재구성한 뒤 deletedWordIds/subtitleOverrides를
+// 덮어씌우는 방식 — split/merge/단어 타이밍 편집은 씬 구조 자체가 바뀌므로 보존되지 않는다.
+export interface ProjectStateV1 {
   version: 1;
   sourceFile: string;        // words.json 파일 경로
   videoFile: string;         // mp4 파일 경로
@@ -103,3 +121,16 @@ export interface ProjectState {
   subtitleOverrides: Record<string, string>; // sceneId → 자막 텍스트
   lastModified: string;      // ISO 8601
 }
+
+// v2: 편집된 scenes 배열을 통째로 저장 — split/merge/단어 타이밍 편집도 보존된다.
+export interface ProjectStateV2 {
+  version: 2;
+  sourceFile: string;
+  videoFile: string;
+  templatePath?: string;
+  capCutProjectPath?: string;
+  scenes: Scene[];
+  lastModified: string;
+}
+
+export type ProjectState = ProjectStateV1 | ProjectStateV2;

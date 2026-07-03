@@ -1,15 +1,20 @@
 import { useEffect, useRef, useCallback, useMemo, useState } from "react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { readFile } from "@tauri-apps/plugin-fs";
+import { confirm } from "@tauri-apps/plugin-dialog";
 import { useVideoStore } from "../state/videoStore";
 import { useTranscriptStore } from "../state/transcriptStore";
-import { buildSubtitleText, compileKeepSpans } from "../lib/segmentCompiler";
+import { buildSubtitleText, compileKeepSpans, mergeTinyGaps } from "../lib/segmentCompiler";
+
+// 이보다 짧은 삭제 구간은 미리보기 재생 중엔 건너뛰지 않는다 (seek 비용 > 절약 시간)
+const MIN_PREVIEW_SEEK_GAP_SEC = 0.25;
 import type { TranscriptProgressPayload } from "../types";
 
 interface Props {
   videoFile: string;
   onOpenVideo: () => void;
   onOpenVideoPath: (path: string) => Promise<void>;
+  onRetranscribe: () => Promise<void>;
   pipelineMessage: string | null;
   transcriptProgress: TranscriptProgressPayload | null;
 }
@@ -24,11 +29,12 @@ export function VideoPreview({
   videoFile,
   onOpenVideo,
   onOpenVideoPath,
+  onRetranscribe,
   pipelineMessage,
   transcriptProgress,
 }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const { currentTime, setSeekFn, setCurrentTime, setPlaying, isPlaying, skipDeletedMode } = useVideoStore();
+  const { currentTime, setSeekFn, setPlayFn, setPauseFn, setCurrentTime, setActiveWordId, setPlaying, isPlaying, skipDeletedMode, subtitleSize, setSubtitleSize } = useVideoStore();
   const scenes = useTranscriptStore((s) => s.scenes);
   const subtitleDrafts = useTranscriptStore((s) => s.subtitleDrafts);
   const [isDragActive, setIsDragActive] = useState(false);
@@ -37,6 +43,9 @@ export function VideoPreview({
   const [blobUrl, setBlobUrl] = useState<string | null>(null);
   const [videoDuration, setVideoDuration] = useState(0);
   const [isSeeking, setIsSeeking] = useState(false);
+  // asset://·file:// 소스가 모두 실패했을 때만 true — 그 전엔 영상 전체를
+  // 메모리에 읽어들이는 blob 폴백을 시도하지 않는다 (대용량 영상에서 불필요한 비용).
+  const [needsBlobFallback, setNeedsBlobFallback] = useState(false);
 
   const videoSources = useMemo(() => {
     if (!videoFile) return [];
@@ -48,6 +57,12 @@ export function VideoPreview({
   }, [blobUrl, videoFile]).filter(Boolean) as string[];
   const videoSrc = videoSources[sourceIndex] ?? "";
   const keptSpans = useMemo(() => compileKeepSpans(scenes), [scenes]);
+  // 미리보기 스킵 판단 전용 — 아주 짧은 삭제 구간은 seek 없이 이어서 재생한다.
+  // 내보내기는 keptSpans(위)를 그대로 쓰므로 실제 컷 정확도에는 영향 없다.
+  const previewSeekSpans = useMemo(
+    () => mergeTinyGaps(keptSpans, MIN_PREVIEW_SEEK_GAP_SEC),
+    [keptSpans]
+  );
   const keptDuration = useMemo(
     () => keptSpans.reduce((sum, span) => sum + (span.endSec - span.startSec), 0),
     [keptSpans]
@@ -72,7 +87,7 @@ export function VideoPreview({
       const last = keptWords[keptWords.length - 1].end;
       return t >= first - 0.05 && t <= last + 0.15;
     });
-    if (!activeScene) return "";
+    if (!activeScene) return scenes.length > 0 ? "..." : "";
     const draft = subtitleDrafts[activeScene.id];
     return draft ?? buildSubtitleText(activeScene);
   }, [currentTime, scenes, subtitleDrafts]);
@@ -88,6 +103,18 @@ export function VideoPreview({
   useEffect(() => {
     setSeekFn(seek);
   }, [seek, setSeekFn]);
+
+  const playVideo = useCallback(() => {
+    void videoRef.current?.play();
+  }, []);
+  const pauseVideo = useCallback(() => {
+    videoRef.current?.pause();
+  }, []);
+
+  useEffect(() => {
+    setPlayFn(playVideo);
+    setPauseFn(pauseVideo);
+  }, [playVideo, pauseVideo, setPlayFn, setPauseFn]);
 
   // 전역 Space 키 → 재생/일시정지 (input/textarea 제외)
   useEffect(() => {
@@ -110,16 +137,15 @@ export function VideoPreview({
   useEffect(() => {
     setSourceIndex(0);
     setVideoError(null);
+    setNeedsBlobFallback(false);
+    setBlobUrl(null);
   }, [videoFile]);
 
   useEffect(() => {
     let cancelled = false;
     let localBlobUrl: string | null = null;
 
-    if (!videoFile) {
-      setBlobUrl(null);
-      return;
-    }
+    if (!videoFile || !needsBlobFallback) return;
 
     void (async () => {
       try {
@@ -129,7 +155,7 @@ export function VideoPreview({
         setBlobUrl(localBlobUrl);
       } catch {
         if (!cancelled) {
-          setBlobUrl(null);
+          setVideoError("영상 미리보기를 불러오지 못했습니다. 파일 경로 또는 브라우저 엔진의 코덱 지원을 확인해주세요.");
         }
       }
     })();
@@ -140,7 +166,14 @@ export function VideoPreview({
         URL.revokeObjectURL(localBlobUrl);
       }
     };
-  }, [videoFile]);
+  }, [videoFile, needsBlobFallback]);
+
+  // blob이 준비되면 목록의 마지막 소스(blob)로 넘어간다
+  useEffect(() => {
+    if (needsBlobFallback && blobUrl) {
+      setSourceIndex(videoSources.length - 1);
+    }
+  }, [needsBlobFallback, blobUrl, videoSources.length]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -155,9 +188,25 @@ export function VideoPreview({
 
     const t = video.currentTime;
     setCurrentTime(t);
-    if (!skipDeletedMode) return;
 
-    const spans = keptSpans;
+    // 현재 발화 중인 단어 추적
+    let found: string | null = null;
+    outer: for (const scene of scenes) {
+      for (const word of scene.words) {
+        if (!word.deleted && t >= word.start && t <= word.end) {
+          found = word.id;
+          break outer;
+        }
+      }
+    }
+    setActiveWordId(found);
+
+    if (!skipDeletedMode) return;
+    // 이미 seek 진행 중이면 겹쳐서 점프시키지 않음 — 안 그러면 seek가 seek를
+    // 가로막아 반복적으로 끊기고 버벅이는 현상이 생긴다.
+    if (video.seeking) return;
+
+    const spans = previewSeekSpans;
     if (spans.length === 0) return;
 
     // 현재 시간이 어떤 keep-span에도 없으면 다음 span으로 점프
@@ -165,13 +214,20 @@ export function VideoPreview({
     if (!inSpan) {
       const next = spans.find((s) => s.startSec > t);
       if (next) {
-        video.currentTime = next.startSec;
+        // fastSeek는 가장 가까운 키프레임으로 빠르게 점프한다(프레임 정밀도는 포기) —
+        // 어차피 삭제 구간을 건너뛰는 것이라 몇 프레임 오차는 체감되지 않고,
+        // 정밀 seek 대비 디코더 재탐색 비용이 줄어 끊김이 훨씬 덜하다.
+        if (typeof video.fastSeek === "function") {
+          video.fastSeek(next.startSec);
+        } else {
+          video.currentTime = next.startSec;
+        }
         setCurrentTime(next.startSec);
       } else {
         video.pause();
       }
     }
-  }, [keptSpans, skipDeletedMode, setCurrentTime]);
+  }, [previewSeekSpans, skipDeletedMode, setCurrentTime, scenes, setActiveWordId]);
 
   const handlePlay = useCallback(() => setPlaying(true), [setPlaying]);
   const handlePause = useCallback(() => setPlaying(false), [setPlaying]);
@@ -199,8 +255,12 @@ export function VideoPreview({
       setSourceIndex((current) => current + 1);
       return;
     }
+    if (!needsBlobFallback) {
+      setNeedsBlobFallback(true);
+      return;
+    }
     setVideoError("영상 미리보기를 불러오지 못했습니다. 파일 경로 또는 브라우저 엔진의 코덱 지원을 확인해주세요.");
-  }, [sourceIndex, videoSources.length]);
+  }, [sourceIndex, videoSources.length, needsBlobFallback]);
   const handleDrop = useCallback(
     async (event: React.DragEvent<HTMLDivElement>) => {
       event.preventDefault();
@@ -231,7 +291,23 @@ export function VideoPreview({
             <div className="video-preview__meta-card">
               <span className="video-preview__meta-label">영상</span>
               <strong className="video-preview__meta-value">{videoFile.replace(/.*\//, "")}</strong>
-              <button className="btn btn--ghost btn--sm" onClick={onOpenVideo}>교체</button>
+              <button className="btn btn--ghost btn--sm" onClick={onOpenVideo} disabled={pipelineMessage !== null}>교체</button>
+              <button
+                className="btn btn--ghost btn--sm"
+                disabled={pipelineMessage !== null}
+                title="캐시를 지우고 자막을 처음부터 다시 전사합니다 (기존 컷/자막 편집은 새로 반영해야 할 수 있습니다)"
+                onClick={() => {
+                  void (async () => {
+                    const ok = await confirm(
+                      "전사를 다시 실행하면 기존 캐시가 삭제되고 새로 전사됩니다. 지금까지 편집한 컷/자막이 어긋날 수 있어요. 계속할까요?",
+                      { title: "전사 다시 실행", kind: "warning" }
+                    );
+                    if (ok) void onRetranscribe();
+                  })();
+                }}
+              >
+                다시 전사
+              </button>
             </div>
             {transcriptProgress && (
               <div className="video-preview__progress-card">
@@ -290,7 +366,7 @@ export function VideoPreview({
             {activeSubtitle && (
               <div className="video-preview__subtitle-overlay">
                 {activeSubtitle.split("\n").map((line, index) => (
-                  <span key={`video-preview-subtitle-${index}`} className="video-preview__subtitle-line">
+                  <span key={`video-preview-subtitle-${index}`} className="video-preview__subtitle-line" style={{ fontSize: `${subtitleSize}px` }}>
                     {line}
                   </span>
                 ))}
@@ -344,6 +420,20 @@ export function VideoPreview({
               />
               컷 스킵
             </label>
+          </div>
+          <div className="subtitle-size-control" onClick={(e) => e.stopPropagation()}>
+            <span className="subtitle-size-control__label">자막 크기</span>
+            <input
+              type="range"
+              className="subtitle-size-control__slider"
+              min={12}
+              max={48}
+              step={1}
+              value={subtitleSize}
+              onChange={(e) => setSubtitleSize(Number(e.target.value))}
+              aria-label="자막 크기"
+            />
+            <span className="subtitle-size-control__value">{subtitleSize}px</span>
           </div>
         </>
       ) : (

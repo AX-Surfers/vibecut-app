@@ -15,6 +15,8 @@ pub fn run() {
             commands::check_python,
             commands::prepare_video_transcript,
             commands::find_default_template_path,
+            commands::read_capcut_cut_project,
+            commands::extract_waveform,
             commands::analyze_auto_edit,
         ])
         .setup(|_app| {

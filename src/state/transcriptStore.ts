@@ -1,11 +1,6 @@
 import { create } from "zustand";
 import type { Scene, Word, WhisperSegment } from "../types";
-
-const SCENE_SPLIT_GAP_THRESHOLD_S = 0.82;
-const SCENE_MERGE_GAP_THRESHOLD_S = 0.32;
-const SCENE_MAX_DURATION_S = 7.5;
-const SCENE_MAX_WORDS = 18;
-const SCENE_TARGET_TEXT_LENGTH = 34;
+import { buildScenesFromSegments } from "../lib/segmentCompiler";
 
 interface TranscriptState {
   scenes: Scene[];
@@ -13,8 +8,17 @@ interface TranscriptState {
   videoFile: string;
   selectedSceneId: string | null;
   subtitleDrafts: Record<string, string>;
-  loadFromJson: (segments: WhisperSegment[], sourceFile: string, videoFile: string) => void;
+  loadFromJson: (
+    segments: WhisperSegment[],
+    sourceFile: string,
+    videoFile: string,
+    keepSpans?: [number, number][]
+  ) => void;
+  loadFromSaved: (scenes: Scene[], sourceFile: string, videoFile: string) => void;
   toggleWord: (wordId: string) => void;
+  setWordTiming: (wordId: string, start: number, end: number) => void;
+  splitWordAt: (wordId: string, splitTime: number, discard: "left" | "right") => void;
+  getAdjacentWords: (wordId: string) => { prev: Word | null; next: Word | null };
   setWordDeleted: (wordIds: string[], deleted: boolean) => void;
   clearDeletedWords: () => void;
   deleteScene: (sceneId: string) => void;
@@ -36,8 +40,28 @@ export const useTranscriptStore = create<TranscriptState>((set, get) => ({
   selectedSceneId: null,
   subtitleDrafts: {},
 
-  loadFromJson(segments, sourceFile, videoFile) {
-    const scenes = buildScenesFromSegments(segments, sourceFile);
+  loadFromJson(segments, sourceFile, videoFile, keepSpans) {
+    let scenes = buildScenesFromSegments(segments, sourceFile);
+    if (keepSpans && keepSpans.length > 0) {
+      scenes = scenes.map((scene) => ({
+        ...scene,
+        words: scene.words.map((word) => {
+          const midpoint = (word.start + word.end) / 2;
+          const kept = keepSpans.some(([start, end]) => midpoint >= start && midpoint <= end);
+          return kept ? word : { ...word, deleted: true };
+        }),
+      }));
+    }
+    set({
+      scenes,
+      sourceFile,
+      videoFile,
+      selectedSceneId: scenes[0]?.id ?? null,
+      subtitleDrafts: {},
+    });
+  },
+
+  loadFromSaved(scenes, sourceFile, videoFile) {
     set({
       scenes,
       sourceFile,
@@ -60,6 +84,50 @@ export const useTranscriptStore = create<TranscriptState>((set, get) => ({
         return touched ? { ...scene, words, subtitleOverride: undefined } : scene;
       }),
     }));
+  },
+
+  setWordTiming(wordId, start, end) {
+    set((state) => ({
+      scenes: state.scenes.map((scene) => {
+        const idx = scene.words.findIndex((w) => w.id === wordId);
+        if (idx === -1) return scene;
+
+        const words = scene.words.map((w, i) => (i === idx ? { ...w, start, end } : w));
+        const patch: Partial<Scene> = { words };
+        if (idx === 0) patch.start = start;
+        if (idx === words.length - 1) patch.end = end;
+        return { ...scene, ...patch, subtitleOverride: undefined };
+      }),
+    }));
+  },
+
+  splitWordAt(wordId, splitTime, discard) {
+    set((state) => ({
+      scenes: state.scenes.map((scene) => {
+        const idx = scene.words.findIndex((w) => w.id === wordId);
+        if (idx === -1) return scene;
+
+        const word = scene.words[idx];
+        if (splitTime <= word.start || splitTime >= word.end) return scene;
+
+        const left: Word = { ...word, id: `${word.id}-a`, end: splitTime, deleted: discard === "left" };
+        const right: Word = { ...word, id: `${word.id}-b`, start: splitTime, deleted: discard === "right" };
+
+        const words = [...scene.words];
+        words.splice(idx, 1, left, right);
+        return { ...scene, words, subtitleOverride: undefined };
+      }),
+    }));
+  },
+
+  getAdjacentWords(wordId) {
+    const flat = get().scenes.flatMap((scene) => scene.words);
+    const idx = flat.findIndex((w) => w.id === wordId);
+    if (idx === -1) return { prev: null, next: null };
+    return {
+      prev: idx > 0 ? flat[idx - 1] : null,
+      next: idx < flat.length - 1 ? flat[idx + 1] : null,
+    };
   },
 
   setWordDeleted(wordIds, deleted) {
@@ -218,83 +286,3 @@ export const useTranscriptStore = create<TranscriptState>((set, get) => ({
   },
 }));
 
-function buildScenesFromSegments(segments: WhisperSegment[], sourceFile: string): Scene[] {
-  const scenes: Scene[] = [];
-  let currentWords: Word[] = [];
-  let currentStart = 0;
-  let currentEnd = 0;
-  let globalWordIndex = 0;
-
-  const pushScene = () => {
-    if (currentWords.length === 0) return;
-    const sceneIndex = scenes.length;
-    scenes.push({
-      id: `scene-${sceneIndex}`,
-      start: currentStart,
-      end: currentEnd,
-      words: currentWords,
-      thumbnailTime: currentStart,
-      sourceFile,
-    });
-    currentWords = [];
-  };
-
-  for (const segment of segments) {
-    const words = segment.words
-      .map((word, index) => ({
-        index,
-        text: normalizeWordText(word.word),
-        start: word.start,
-        end: word.end,
-      }))
-      .filter((word) => word.text.length > 0)
-      .map((word) => ({
-        id: `word-${globalWordIndex + word.index}`,
-        start: word.start,
-        end: word.end,
-        text: word.text,
-        deleted: false,
-      }));
-
-    globalWordIndex += segment.words.length;
-    if (words.length === 0) continue;
-
-    if (currentWords.length === 0) {
-      currentWords = words;
-      currentStart = words[0].start;
-      currentEnd = words[words.length - 1].end;
-      continue;
-    }
-
-    const gap = words[0].start - currentEnd;
-    const currentText = currentWords.map((word) => word.text).join(" ");
-    const shouldSplit =
-      gap >= SCENE_SPLIT_GAP_THRESHOLD_S ||
-      currentWords.length >= SCENE_MAX_WORDS ||
-      currentEnd - currentStart >= SCENE_MAX_DURATION_S ||
-      (gap >= SCENE_MERGE_GAP_THRESHOLD_S && currentText.length >= SCENE_TARGET_TEXT_LENGTH) ||
-      endsWithSentenceTone(currentText);
-
-    if (shouldSplit) {
-      pushScene();
-      currentWords = words;
-      currentStart = words[0].start;
-      currentEnd = words[words.length - 1].end;
-      continue;
-    }
-
-    currentWords = [...currentWords, ...words];
-    currentEnd = words[words.length - 1].end;
-  }
-
-  pushScene();
-  return scenes;
-}
-
-function normalizeWordText(text: string): string {
-  return text.replace(/\s+/g, " ").trim();
-}
-
-function endsWithSentenceTone(text: string): boolean {
-  return /[.!?…]$/.test(text) || /(요|죠|다|까|네|군요|거든요)$/.test(text);
-}

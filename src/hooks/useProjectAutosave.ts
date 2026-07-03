@@ -23,24 +23,14 @@ export function useProjectAutosave() {
     if (saveTimer.current) clearTimeout(saveTimer.current);
 
     saveTimer.current = setTimeout(async () => {
-      const deletedWordIds = scenes.flatMap((scene) =>
-        scene.words.filter((word) => word.deleted).map((word) => word.id)
-      );
-      const subtitleOverrides: Record<string, string> = {};
-
-      for (const scene of scenes) {
-        if (scene.subtitleOverride !== undefined) subtitleOverrides[scene.id] = scene.subtitleOverride;
-      }
-
       try {
         await saveProject(projectPath, {
-          version: 1,
+          version: 2,
           sourceFile,
           videoFile: useTranscriptStore.getState().videoFile,
           templatePath: templatePath ?? undefined,
           capCutProjectPath: capCutProjectPath ?? undefined,
-          deletedWordIds,
-          subtitleOverrides,
+          scenes,
           lastModified: new Date().toISOString(),
         });
         markClean();

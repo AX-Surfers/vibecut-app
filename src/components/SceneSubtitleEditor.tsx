@@ -89,7 +89,7 @@ export function SceneSubtitleEditor({
         onFocus={() => { onSelect?.(); onFocusSeek?.(); }}
         onBlur={(event) => commitSubtitle(event.target.value)}
         onKeyDown={handleKeyDown}
-        rows={Math.max(2, subtitleLines.length || 1)}
+        rows={1}
         onClick={(event) => event.stopPropagation()}
         placeholder="자막 문장을 입력하세요"
         title="문장 맨 앞에서 Backspace를 누르면 이전 씬과 합쳐집니다."

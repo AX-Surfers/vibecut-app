@@ -8,6 +8,11 @@
     "opener:default",
     "dialog:default",
     "fs:default",
+    "fs:read-files",
+    {
+      "identifier": "fs:scope",
+      "allow": ["**"]
+    },
     "shell:default"
   ]
 }
